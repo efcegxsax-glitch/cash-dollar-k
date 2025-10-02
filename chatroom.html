@@ -369,6 +369,45 @@
         mask-image: radial-gradient(ellipse at center, black 50%, transparent 100%);
         -webkit-mask-image: radial-gradient(ellipse at center, black 50%, transparent 100%);
     }
+    
+    /* إضافة زر إرسال هدية في نافذة الملف الشخصي */
+    .gift-btn {
+        background-image: linear-gradient(to right, #c0392b, #8e44ad);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        font-family: "Cairo", sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 10px;
+        margin-top: 10px;
+    }
+    
+    /* إضافة خيار المستلم في واجهة الهدايا */
+    .recipient-selector {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: rgba(0,0,0,0.2);
+        border-radius: 10px;
+    }
+    
+    .recipient-selector label {
+        font-size: 14px;
+        color: var(--text-secondary);
+    }
+    
+    .recipient-selector select {
+        background-color: #333;
+        border: 1px solid #555;
+        border-radius: 20px;
+        color: white;
+        padding: 5px 10px;
+        font-family: "Cairo", sans-serif;
+    }
   </style>
 </head>
 <body>
@@ -415,7 +454,47 @@
   </div>
 
   <div class="modal" id="edit-room-modal"><div class="modal-content"><div class="modal-title">تعديل معلومات الغرفة</div><input type="text" class="modal-input" id="edit-room-name-input" placeholder="اكتب اسم الغرفة الجديد..." maxlength="30"><input type="text" class="modal-input" id="edit-room-password-input" placeholder="اكتب رمز للغرفة (اختياري)" style="display: none;"><input type="file" id="edit-room-image-input" class="image-input" accept="image/*"><label for="edit-room-image-input" class="image-preview-container" id="edit-image-preview-container"><span id="edit-image-preview-text">اختر صورة جديدة (اختياري)</span><img id="edit-image-preview" src="" alt="Room preview" style="display: none;"></label><div class="modal-actions"><div style="display:flex; width:100%; gap:10px;"><button class="modal-button cancel-btn" id="cancel-edit-btn">إلغاء</button><button class="modal-button confirm-btn" id="confirm-edit-btn">حفظ التغييرات</button></div></div></div></div>
-  <div class="modal" id="user-profile-modal"><div class="modal-content"><img id="profile-modal-img" src="" alt="User Avatar"><h3 id="profile-modal-name">اسم المستخدم</h3><p id="profile-modal-id">ID: 00000</p><div id="profile-modal-admin-controls" style="display: none;"><h4>صلاحيات الأدمن</h4><div class="permission-row"><label for="perm-super-admin">سوبر أدمن (كل الصلاحيات)</label><input type="checkbox" id="perm-super-admin"></div><hr style="border-color: #444; margin: 10px 0;"><div class="permission-row"><label for="perm-edit-room">تعديل الغرفة</label><input type="checkbox" id="perm-edit-room"></div><div class="permission-row"><label for="perm-kick-users">طرد المستخدمين</label><input type="checkbox" id="perm-kick-users"></div><div class="permission-row"><label for="perm-manage-mics">التحكم بالمايكات</label><input type="checkbox" id="perm-manage-mics"></div></div><div class="modal-actions"><div style="display:flex; width:100%; gap:10px;"><button class="modal-button cancel-btn" id="profile-modal-close-btn">إغلاق</button></div><div style="display:flex; width:100%; gap:10px; margin-top: 10px;"><button class="modal-button confirm-btn" id="profile-modal-save-btn" style="display: none;">حفظ الصلاحيات</button><button class="modal-button kick-btn" id="profile-modal-ban-btn" style="display: none;">طرد من الغرفة</button></div></div></div></div>
+  
+  <div class="modal" id="user-profile-modal">
+    <div class="modal-content">
+      <img id="profile-modal-img" src="" alt="User Avatar">
+      <h3 id="profile-modal-name">اسم المستخدم</h3>
+      <p id="profile-modal-id">ID: 00000</p>
+      <div id="profile-modal-admin-controls" style="display: none;">
+        <h4>صلاحيات الأدمن</h4>
+        <div class="permission-row">
+          <label for="perm-super-admin">سوبر أدمن (كل الصلاحيات)</label>
+          <input type="checkbox" id="perm-super-admin">
+        </div>
+        <hr style="border-color: #444; margin: 10px 0;">
+        <div class="permission-row">
+          <label for="perm-edit-room">تعديل الغرفة</label>
+          <input type="checkbox" id="perm-edit-room">
+        </div>
+        <div class="permission-row">
+          <label for="perm-kick-users">طرد المستخدمين</label>
+          <input type="checkbox" id="perm-kick-users">
+        </div>
+        <div class="permission-row">
+          <label for="perm-manage-mics">التحكم بالمايكات</label>
+          <input type="checkbox" id="perm-manage-mics">
+        </div>
+      </div>
+      
+      <!-- زر إرسال هدية للمستخدم -->
+      <button class="gift-btn" id="profile-modal-gift-btn">إرسال هدية</button>
+      
+      <div class="modal-actions">
+        <div style="display:flex; width:100%; gap:10px;">
+          <button class="modal-button cancel-btn" id="profile-modal-close-btn">إغلاق</button>
+        </div>
+        <div style="display:flex; width:100%; gap:10px; margin-top: 10px;">
+          <button class="modal-button confirm-btn" id="profile-modal-save-btn" style="display: none;">حفظ الصلاحيات</button>
+          <button class="modal-button kick-btn" id="profile-modal-ban-btn" style="display: none;">طرد من الغرفة</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="mic-control-modal">
     <div class="modal-content">
@@ -498,10 +577,19 @@
               <button data-category="valuable">هدايا قيمة</button>
           </div>
       </div>
+      
+      <!-- إضافة خيار اختيار المستلم -->
+      <div class="recipient-selector">
+          <label for="gift-recipient-select">إرسال إلى:</label>
+          <select id="gift-recipient-select">
+              <option value="all">الجميع</option>
+          </select>
+      </div>
+      
       <div class="gift-grid" id="gift-grid-container">
       </div>
       <div class="gift-footer">
-          <button id="send-gift-btn">إرسال إلى الجميع</button>
+          <button id="send-gift-btn">إرسال</button>
           <input type="number" id="gift-quantity" value="1" min="1">
           <div style="color: #666; font-size: 24px; letter-spacing: 5px;">- - -</div>
       </div>
@@ -599,6 +687,9 @@
         this.allRoomsData = {}; 
         this.joinedRoomsIds = new Set();
         this.currentFilter = 'all';
+        
+        // متغير لتخزين المستخدم المستهدف لإرسال الهدايا
+        this.targetUserForGift = null;
       }
       
       async createRoom(roomName, imageFile) {
@@ -1264,6 +1355,7 @@
           const adminControls = document.getElementById('profile-modal-admin-controls');
           const saveBtn = document.getElementById('profile-modal-save-btn');
           const banBtn = document.getElementById('profile-modal-ban-btn');
+          const giftBtn = document.getElementById('profile-modal-gift-btn');
           
           const isSuperAdmin = this.currentRoomData.createdBy === this.currentUser.uid;
           const targetUserIsSuperAdmin = this.currentRoomData.createdBy === userId;
@@ -1305,6 +1397,14 @@
                   banBtn.onclick = () => this.openBanModal(userId, userData.name);
               }
           }
+          
+          // إظهار زر إرسال هدية إذا كان المستخدم ليس هو نفسه
+          giftBtn.style.display = userId !== this.currentUser.uid ? 'block' : 'none';
+          giftBtn.onclick = () => {
+              this.targetUserForGift = userId;
+              this.openGiftDrawerForUser(userId, userData.name);
+          };
+          
           modal.style.display = 'flex';
       }
 
@@ -1773,24 +1873,45 @@
         document.getElementById('user-diamond-balance').textContent = currentDiamonds - totalCost;
 
         const singleRecipientEarning = Math.floor((this.selectedGift.price / 2) * quantity);
-        if (singleRecipientEarning >= 1) {
-            const presenceRef = ref(this.db, `rooms/${this.currentRoomId}/presence`);
-            const presenceSnapshot = await get(presenceRef);
-            if (presenceSnapshot.exists()) {
-                const recipientPromises = [];
-                presenceSnapshot.forEach(childSnapshot => {
-                    const recipientUid = childSnapshot.key;
-                    if (recipientUid !== this.currentUser.uid) {
-                        const recipientRef = ref(this.db, `users/${recipientUid}`);
-                        recipientPromises.push(update(recipientRef, { diamonds: increment(singleRecipientEarning) }));
-                    }
-                });
-                await Promise.all(recipientPromises);
+        
+        // تحديد المستلم
+        const recipientSelect = document.getElementById('gift-recipient-select');
+        const recipientId = recipientSelect.value;
+        
+        // إذا كان الهدية موجهة لمستخدم معين
+        if (recipientId !== 'all') {
+            if (singleRecipientEarning >= 1) {
+                const recipientRef = ref(this.db, `users/${recipientId}`);
+                await update(recipientRef, { diamonds: increment(singleRecipientEarning) });
+            }
+        } else {
+            // إذا كانت الهدية للجميع
+            if (singleRecipientEarning >= 1) {
+                const presenceRef = ref(this.db, `rooms/${this.currentRoomId}/presence`);
+                const presenceSnapshot = await get(presenceRef);
+                if (presenceSnapshot.exists()) {
+                    const recipientPromises = [];
+                    presenceSnapshot.forEach(childSnapshot => {
+                        const recipientUid = childSnapshot.key;
+                        if (recipientUid !== this.currentUser.uid) {
+                            const recipientRef = ref(this.db, `users/${recipientUid}`);
+                            recipientPromises.push(update(recipientRef, { diamonds: increment(singleRecipientEarning) }));
+                        }
+                    });
+                    await Promise.all(recipientPromises);
+                }
             }
         }
         
         const senderData = await this.getUserData(this.currentUser.uid);
-        const giftMessageText = `${senderData.name} أرسل ${quantity}x ${this.selectedGift.name} 🎁`;
+        let giftMessageText = '';
+        
+        if (recipientId === 'all') {
+            giftMessageText = `${senderData.name} أرسل ${quantity}x ${this.selectedGift.name} 🎁 للجميع`;
+        } else {
+            const recipientData = await this.getUserData(recipientId);
+            giftMessageText = `${senderData.name} أرسل ${quantity}x ${this.selectedGift.name} 🎁 لـ ${recipientData.name}`;
+        }
         
         const payload = {
             text: giftMessageText,
@@ -1799,7 +1920,8 @@
                 id: this.selectedGift.id,
                 name: this.selectedGift.name,
                 img: this.selectedGift.img,
-                quantity: quantity
+                quantity: quantity,
+                recipient: recipientId
             }
         };
         
@@ -1847,6 +1969,62 @@
                   this.displayGlobalAnnouncement(announcement);
               }
           });
+      }
+      
+      // دالة جديدة لفتح درج الهدايا لمستخدم معين
+      async openGiftDrawerForUser(userId, userName) {
+          const userRef = ref(this.db, `users/${this.currentUser.uid}`);
+          const userSnapshot = await get(userRef);
+          if(userSnapshot.exists()){
+            const userData = userSnapshot.val();
+            document.getElementById('user-diamond-balance').textContent = userData.diamonds || 0;
+          }
+
+          // تحديث خيارات المستلم
+          const recipientSelect = document.getElementById('gift-recipient-select');
+          recipientSelect.innerHTML = '';
+          
+          // إضافة خيار "الجميع"
+          const allOption = document.createElement('option');
+          allOption.value = 'all';
+          allOption.textContent = 'الجميع';
+          recipientSelect.appendChild(allOption);
+          
+          // إضافة المستخدم المستهدف كخيار
+          const userOption = document.createElement('option');
+          userOption.value = userId;
+          userOption.textContent = userName;
+          userOption.selected = true;
+          recipientSelect.appendChild(userOption);
+          
+          // إضافة باقي المستخدمين في الغرفة
+          if (this.currentRoomId) {
+              const presenceRef = ref(this.db, `rooms/${this.currentRoomId}/presence`);
+              const presenceSnapshot = await get(presenceRef);
+              if (presenceSnapshot.exists()) {
+                  presenceSnapshot.forEach(childSnapshot => {
+                      const uid = childSnapshot.key;
+                      if (uid !== this.currentUser.uid && uid !== userId) {
+                          this.getUserData(uid).then(userData => {
+                              const option = document.createElement('option');
+                              option.value = uid;
+                              option.textContent = userData.name;
+                              recipientSelect.appendChild(option);
+                          });
+                      }
+                  });
+              }
+          }
+
+          const giftDrawer = document.getElementById('gift-drawer');
+          const giftDrawerOverlay = document.getElementById('gift-drawer-overlay');
+          
+          giftDrawer.classList.add('open');
+          giftDrawerOverlay.style.display = 'block';
+          this.loadGifts('simple');
+          
+          // إغلاق نافذة الملف الشخصي
+          document.getElementById('user-profile-modal').style.display = 'none';
       }
     }
     
@@ -2058,6 +2236,36 @@
             document.getElementById('user-diamond-balance').textContent = userData.diamonds || 0;
           }
 
+          // تحديث خيارات المستلم عند فتح درج الهدايا العادي
+          const recipientSelect = document.getElementById('gift-recipient-select');
+          recipientSelect.innerHTML = '';
+          
+          // إضافة خيار "الجميع"
+          const allOption = document.createElement('option');
+          allOption.value = 'all';
+          allOption.textContent = 'الجميع';
+          allOption.selected = true;
+          recipientSelect.appendChild(allOption);
+          
+          // إضافة باقي المستخدمين في الغرفة
+          if (chatManager.currentRoomId) {
+              const presenceRef = ref(chatManager.db, `rooms/${chatManager.currentRoomId}/presence`);
+              const presenceSnapshot = await get(presenceRef);
+              if (presenceSnapshot.exists()) {
+                  presenceSnapshot.forEach(childSnapshot => {
+                      const uid = childSnapshot.key;
+                      if (uid !== chatManager.currentUser.uid) {
+                          chatManager.getUserData(uid).then(userData => {
+                              const option = document.createElement('option');
+                              option.value = uid;
+                              option.textContent = userData.name;
+                              recipientSelect.appendChild(option);
+                          });
+                      }
+                  });
+              }
+          }
+
           giftDrawer.classList.add('open');
           giftDrawerOverlay.style.display = 'block';
           chatManager.loadGifts('simple');
@@ -2085,4 +2293,4 @@
   </script>
 
 </body>
-</html>
+</htmlن
