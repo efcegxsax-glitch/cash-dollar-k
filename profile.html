@@ -180,11 +180,9 @@
         notification.className = `notification ${type} show`;
         setTimeout(() => notification.classList.remove('show'), 3000);
     }
-    
-    // --- [ تعديل جوهري ] ---
+
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        // المستخدم مسجل دخوله، قم بجلب بياناته
         const userRef = dbRef(db, 'users/' + user.uid);
         get(userRef).then((snapshot) => {
           if (snapshot.exists()) {
@@ -193,21 +191,18 @@
             userNameElem.textContent = currentUserData.name;
             userNameCardElem.textContent = currentUserData.name;
             userEmailElem.textContent = user.email;
-            referralCodeElem.textContent = currentUserData.referralCode || 'N/A'; // يعرض رمز الإحالة
+            referralCodeElem.textContent = currentUserData.referralCode;
             loader.style.display = 'none';
             profileSection.style.display = 'block';
           } else {
              loader.innerHTML = 'خطأ: لم يتم العثور على بيانات الملف الشخصي.';
-             console.error("User data not found for UID:", user.uid);
           }
         }).catch(error => {
             console.error("Error fetching user data:", error);
             loader.innerHTML = 'حدث خطأ في جلب البيانات.';
         });
       } else {
-        // المستخدم غير مسجل، أعد توجيهه لصفحة الدخول
-        console.log("No user is logged in. Redirecting to login page.");
-        window.location.href = 'index.html';
+        loader.innerHTML = '<h2>الرجاء تسجيل الدخول أولاً.</h2>';
       }
     });
 
@@ -283,7 +278,7 @@
             try {
                 const user = auth.currentUser;
                 if (!user) throw new Error("User not authenticated.");
-                await update(dbRef(db, 'users/'' + user.uid), { profilePicture: base64Data });
+                await update(dbRef(db, 'users/' + user.uid), { profilePicture: base64Data });
                 currentUserData.profilePicture = base64Data;
                 profilePicElem.src = base64Data;
                 showNotification('تم تحديث الصورة بنجاح!', 'success');
