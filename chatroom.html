@@ -481,7 +481,6 @@
         </div>
       </div>
       
-      <!-- زر إرسال هدية للمستخدم -->
       <button class="gift-btn" id="profile-modal-gift-btn">إرسال هدية</button>
       
       <div class="modal-actions">
@@ -578,7 +577,6 @@
           </div>
       </div>
       
-      <!-- إضافة خيار اختيار المستلم -->
       <div class="recipient-selector">
           <label for="gift-recipient-select">إرسال إلى:</label>
           <select id="gift-recipient-select">
@@ -690,6 +688,8 @@
         
         // متغير لتخزين المستخدم المستهدف لإرسال الهدايا
         this.targetUserForGift = null;
+        
+        this.isMicActive = false; // لتتبع حالة تشغيل المايك
       }
       
       async createRoom(roomName, imageFile) {
@@ -1028,17 +1028,33 @@
 
       async leaveRoom() {
         if (this.currentRoomId) {
+            // تحقق من ما إذا كان هو آخر شخص في الغرفة
             const presenceNodeRef = ref(this.db, `rooms/${this.currentRoomId}/presence`);
             const presenceSnapshot = await get(presenceNodeRef);
-
-            if (presenceSnapshot.exists() && presenceSnapshot.size <= 1) {
-                const messagesNodeRef = ref(this.db, `rooms/${this.currentRoomId}/messages`);
-                await remove(messagesNodeRef);
+            if (presenceSnapshot.exists()) {
+                const presenceUsers = presenceSnapshot.val();
+                // لا نحذف الرسائل إلا إذا لم يتبق أحد غيره
+                if (Object.keys(presenceUsers).length <= 1 && presenceUsers[this.currentUser.uid]) {
+                    const messagesNodeRef = ref(this.db, `rooms/${this.currentRoomId}/messages`);
+                    await remove(messagesNodeRef);
+                }
             }
 
+            // إزالة حالة الوجود الخاصة به
             const selfPresenceRef = ref(this.db, `rooms/${this.currentRoomId}/presence/${this.currentUser.uid}`);
             remove(selfPresenceRef);
+
+            // إزالة المستخدم من أي مايك
+            for (let i = 1; i <= 4; i++) {
+                const micRef = ref(this.db, `rooms/${this.currentRoomId}/micSlots/mic${i}`);
+                const micSnapshot = await get(micRef);
+                if (micSnapshot.exists() && micSnapshot.val().uid === this.currentUser.uid) {
+                    await set(micRef, null);
+                    break;
+                }
+            }
         }
+        
         this.stopAudioStream();
         this.cleanupAllWebRTC();
         
@@ -1079,43 +1095,95 @@
               this.currentRoomData = { id: roomId, ...roomData };
 
               // --- 1. تحديد الأدوار والمستخدمين ---
-              const broadcasters = Object.values(roomData.micSlots || {}).filter(u => u && u.uid).map(u => u.uid);
+              // Broadcasters: جميع المستخدمين على المايك
+              const broadcasters = Object.values(roomData.micSlots || {})
+                                       .filter(u => u && u.uid)
+                                       .map(u => u.uid);
+              // Listeners/All Present Users: جميع المستخدمين في الغرفة
               const allPresentUsers = Object.keys(roomData.presence || {});
               const myId = this.currentUser.uid;
               const amIBroadcaster = broadcasters.includes(myId);
-
-              // --- 2. تحديد الاتصالات المطلوبة ---
+              
+              // --- 2. تحديد الاتصالات المطلوبة والغير مطلوبة ---
               let requiredPeers = new Set();
-              if (amIBroadcaster) {
-                  allPresentUsers.forEach(uid => {
-                      if (uid !== myId) requiredPeers.add(uid);
+              let shouldConnectToMe = new Set();
+              let currentPeers = new Set(Object.keys(this.peerConnections));
+              
+              broadcasters.forEach(broadcasterId => {
+                  if (broadcasterId !== myId) {
+                      // أنا أستمع إلى هذا الشخص (إذا لم أكن أنا)
+                      requiredPeers.add(broadcasterId);
+                  }
+                  // جميع المستخدمين الحاضرين يجب أن يستمعوا إلى هذا الناشر
+                  allPresentUsers.forEach(listenerId => {
+                      if (listenerId === myId && broadcasterId !== myId) {
+                          // هذا الناشر (broadcasterId) يجب أن يتصل بي
+                          shouldConnectToMe.add(broadcasterId);
+                      }
                   });
-              } else {
-                  broadcasters.forEach(uid => {
-                      requiredPeers.add(uid);
+              });
+              
+              // إذا كنت أنا الناشر: يجب أن أتصل بكل شخص حاضر (عدا نفسي)
+              if (amIBroadcaster) {
+                  allPresentUsers.forEach(listenerId => {
+                      if (listenerId !== myId) {
+                          requiredPeers.add(listenerId);
+                      }
                   });
               }
-
-              const currentPeers = new Set(Object.keys(this.peerConnections));
-
-              // --- 3. إنشاء الاتصالات الجديدة ---
-              requiredPeers.forEach(peerId => {
-                  if (!currentPeers.has(peerId)) {
-                      const amITheInitiator = myId < peerId;
-                      if (amITheInitiator) {
-                          this.createPeerConnection(peerId, true);
-                      }
-                  }
-              });
-
-              // --- 4. إغلاق الاتصالات القديمة ---
+              
+              // --- 3. إغلاق الاتصالات الغير مطلوبة ---
               currentPeers.forEach(peerId => {
                   if (!requiredPeers.has(peerId)) {
                       this.cleanupPeerConnection(peerId);
                   }
               });
 
-              // --- 5. تحديث واجهة المستخدم للمايكات (مع تصحيح الخطأ) ---
+              // --- 4. إنشاء وتحديث الاتصالات المطلوبة ---
+              requiredPeers.forEach(peerId => {
+                  // الاتصال يتم دائماً من الـ UID الأصغر إلى الأكبر لضمان اتصال واحد بين طرفين
+                  const amITheInitiator = myId < peerId;
+                  if (amITheInitiator && !currentPeers.has(peerId)) {
+                      this.createPeerConnection(peerId, true);
+                  } else if (currentPeers.has(peerId)) {
+                      // إعادة إضافة المسارات إذا كنت أنا الناشر لتحديث الاتصال
+                      const pc = this.peerConnections[peerId];
+                      const hasAudioTrack = pc.getSenders().some(sender => sender.track && sender.track.kind === 'audio');
+                      if (amIBroadcaster && this.localStream && !hasAudioTrack) {
+                          this.localStream.getTracks().forEach(track => {
+                              // يجب أن نقوم بإضافة المسار مرة واحدة فقط
+                              if (!pc.localStream || !pc.localStream.getTracks().includes(track)) {
+                                  pc.addTrack(track, this.localStream);
+                              }
+                          });
+                          // بدء عملية إعادة التفاوض
+                          if (pc.iceConnectionState !== 'new') {
+                             this.createOfferAndSend(peerId);
+                          }
+                      }
+                  } else if (!amITheInitiator && !currentPeers.has(peerId)) {
+                      // إذا لم أكن البادئ، انتظر العرض (Offer) من الطرف الآخر.
+                      // لا تفعل شيئاً هنا، حيث أن الطرف الأكبر سيبدأ الاتصال.
+                  }
+              });
+              
+              // التأكد من إزالة مسار الصوت إذا لم أعد ناشراً
+              if (!amIBroadcaster) {
+                  for (const peerId in this.peerConnections) {
+                      const pc = this.peerConnections[peerId];
+                      pc.getSenders().forEach(sender => {
+                          if (sender.track && sender.track.kind === 'audio') {
+                              pc.removeTrack(sender);
+                              // بدء عملية إعادة التفاوض (للتأكد من إزالة الصوت من الطرف الآخر)
+                              this.createOfferAndSend(peerId);
+                          }
+                      });
+                      
+                  }
+                  this.stopAudioStream();
+              }
+              
+              // --- 5. تحديث واجهة المستخدم للمايكات ---
               const micSlotsData = roomData.micSlots || {};
               const micLocksData = roomData.micLocks || {};
 
@@ -1140,6 +1208,11 @@
                           <img src="${avatarUrl}" alt="Avatar" class="user-avatar" data-uid="${micSlotData.uid}">
                           <div class="mic-status-icons">${statusIconsHTML}</div>
                       `;
+                      // إضافة حدث النقر على الصورة هنا
+                      micSlotElement.querySelector('.user-avatar').addEventListener('click', (e) => {
+                          const userId = e.target.getAttribute('data-uid');
+                          if (userId) this.showUserProfile(userId);
+                      });
                   } else {
                       if (isLocked) {
                           statusIconsHTML += `<i class="fas fa-lock status-icon"></i>`;
@@ -1216,18 +1289,29 @@
       }
 
       async takeMic(micId) {
-        await this.startAudioStream(micId);
-        if(!this.localStream) return;
-
+        // التأكد من إزالة المستخدم من أي مايك آخر
         const allMicsData = this.currentRoomData.micSlots || {};
         for(const key in allMicsData){
             if(allMicsData[key] && allMicsData[key].uid === this.currentUser.uid){
                 const otherMicRef = ref(this.db, `rooms/${this.currentRoomId}/micSlots/${key}`);
                 await set(otherMicRef, null);
+                // إغلاق الاتصالات القديمة لإعادة التفاوض بشكل سليم
+                // (listenToMicChanges ستقوم بإعادة إنشاء الاتصالات المطلوبة لاحقاً)
+                this.cleanupAllWebRTC();
             }
         }
+        
+        // بدأ بث الصوت المحلي
+        await this.startAudioStream(micId);
+        if(!this.localStream) {
+            document.getElementById('mic-control-modal').style.display = 'none';
+            return;
+        }
+
+        // وضع المستخدم على المايك الجديد
         const micRef = ref(this.db, `rooms/${this.currentRoomId}/micSlots/${micId}`);
         await set(micRef, { uid: this.currentUser.uid, isMuted: false });
+        
         document.getElementById('mic-control-modal').style.display = 'none';
       }
 
@@ -1236,14 +1320,28 @@
         const micRef = ref(this.db, `rooms/${this.currentRoomId}/micSlots/${micId}`);
         await set(micRef, null);
         document.getElementById('mic-control-modal').style.display = 'none';
+        
+        // إزالة مسارات الصوت من جميع الاتصالات وبدء إعادة التفاوض
+        for (const peerId in this.peerConnections) {
+            const pc = this.peerConnections[peerId];
+            pc.getSenders().forEach(sender => {
+                if (sender.track && sender.track.kind === 'audio') {
+                    pc.removeTrack(sender);
+                }
+            });
+            this.createOfferAndSend(peerId);
+        }
       }
 
       async toggleSelfMute(micId, currentState) {
+        const newState = !currentState;
         const micRef = ref(this.db, `rooms/${this.currentRoomId}/micSlots/${micId}/isMuted`);
-        await set(micRef, !currentState);
+        await set(micRef, newState);
+        
         if (this.localStream) {
             this.localStream.getAudioTracks().forEach(track => {
-                track.enabled = currentState;
+                // تفعيل/تعطيل إرسال الصوت
+                track.enabled = !newState;
             });
         }
         document.getElementById('mic-control-modal').style.display = 'none';
@@ -1322,7 +1420,7 @@
         }
         
         const messagesRef = ref(this.db, `rooms/${roomId}/messages`);
-        const newMessagesQuery = query(messagesRef, orderByChild('timestamp'), startAt(Date.now()));
+        const newMessagesQuery = query(messagesRef, orderByChild('timestamp'), startAt(Date.now() - 5000)); // لتقليل احتمال فقدان الرسائل الحديثة
         
         this.listeners.newMessages = { ref: newMessagesQuery, type: 'child_added' };
 
@@ -1475,8 +1573,9 @@
       async displayMessage(message) {
         const userData = await this.getUserData(message.senderId);
         const messagesContainer = document.getElementById('messages-container');
+        const isSent = message.senderId === this.currentUser.uid;
         const msgDiv = document.createElement('div');
-        msgDiv.className = `message`;
+        msgDiv.className = `message ${isSent ? 'sent' : 'received'}`;
         
         const avatarUrl = userData.profilePicture || userData.avatar;
 
@@ -1513,7 +1612,18 @@
       async startAudioStream(micId) {
         try {
             if(this.localStream) this.stopAudioStream();
+            
             this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.isMicActive = true;
+            
+            // إضافة مسار الصوت إلى جميع الاتصالات الحالية
+            for (const peerId in this.peerConnections) {
+                const pc = this.peerConnections[peerId];
+                this.localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, this.localStream);
+                });
+                this.createOfferAndSend(peerId);
+            }
 
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
@@ -1525,22 +1635,33 @@
             const dataArray = new Uint8Array(bufferLength);
 
             const detectSpeaking = () => {
-                if (!this.analyser) return;
-                this.analyser.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < bufferLength; i++) {
-                    sum += dataArray[i];
-                }
-                let avg = sum / bufferLength;
-
-                const micSlotElement = document.querySelector(`[data-mic-id="${micId}"]`);
-                const avatar = micSlotElement ? micSlotElement.querySelector('.user-avatar') : null;
+                if (!this.analyser || !this.localStream) return;
                 
-                if (avatar) {
-                    if (avg > 20) {
-                        avatar.classList.add('speaking');
-                    } else {
-                        avatar.classList.remove('speaking');
+                // التحقق من أن المايك غير مكتوم محلياً
+                const isLocallyMuted = !this.localStream.getAudioTracks().some(track => track.enabled);
+                if (isLocallyMuted) {
+                    // إزالة تأثير التحدث إذا كان المايك مكتوماً محلياً
+                    const micSlotElement = document.querySelector(`[data-mic-id="${micId}"]`);
+                    const avatar = micSlotElement ? micSlotElement.querySelector('.user-avatar') : null;
+                    if (avatar) avatar.classList.remove('speaking');
+                } else {
+                    // تحليل مستوى الصوت إذا كان المايك مفعلاً
+                    this.analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < bufferLength; i++) {
+                        sum += dataArray[i];
+                    }
+                    let avg = sum / bufferLength;
+
+                    const micSlotElement = document.querySelector(`[data-mic-id="${micId}"]`);
+                    const avatar = micSlotElement ? micSlotElement.querySelector('.user-avatar') : null;
+                    
+                    if (avatar) {
+                        if (avg > 20) {
+                            avatar.classList.add('speaking');
+                        } else {
+                            avatar.classList.remove('speaking');
+                        }
                     }
                 }
 
@@ -1562,6 +1683,7 @@
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
             this.localStream = null;
+            this.isMicActive = false;
         }
         if (this.audioContext) {
             this.audioContext.close();
@@ -1571,6 +1693,8 @@
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+        // إزالة تأثير التحدث من جميع المايكات
+        document.querySelectorAll('.user-avatar.speaking').forEach(avatar => avatar.classList.remove('speaking'));
       }
       
       playGiftAnimation(videoFile) {
@@ -1621,6 +1745,7 @@
       }
 
       async initWebRTCSignaling() {
+          this.cleanupAllWebRTC(); // إغلاق أي استماع قديم قبل البدء
           const signalsRef = ref(this.db, `rooms/${this.currentRoomId}/webrtc/${this.currentUser.uid}/signals`);
           this.listeners.webrtc = { ref: signalsRef, type: 'child_added' };
           
@@ -1628,16 +1753,23 @@
               if (!snapshot.exists()) return;
               
               const signal = snapshot.val();
-              remove(snapshot.ref);
+              const tempRef = snapshot.ref; // حفظ المرجع قبل الحذف
+              // remove(tempRef); // يتم الحذف داخل كل معالج
 
               switch(signal.type) {
                 case 'offer':
+                    // حذف بعد المعالجة
+                    remove(tempRef);
                     await this.handleOffer(signal.senderId, signal.data);
                     break;
                 case 'answer':
+                    // حذف بعد المعالجة
+                    remove(tempRef);
                     await this.handleAnswer(signal.senderId, signal.data);
                     break;
                 case 'iceCandidate':
+                    // حذف بعد المعالجة
+                    remove(tempRef);
                     await this.handleIceCandidate(signal.senderId, signal.data);
                     break;
               }
@@ -1645,15 +1777,19 @@
       }
 
       async createPeerConnection(remoteUserId, isInitiator) {
-          if (this.peerConnections[remoteUserId]) return;
+          if (this.peerConnections[remoteUserId]) {
+              // إذا كان الاتصال موجوداً، قم بإغلاقه وإعادة إنشائه لضمان حالة نظيفة
+              this.cleanupPeerConnection(remoteUserId);
+          }
           
-          const amIBroadcaster = Object.values(this.currentRoomData.micSlots || {})
-                                       .some(slot => slot && slot.uid === this.currentUser.uid);
-
           this.peerConnections[remoteUserId] = new RTCPeerConnection(this.iceServers);
           const pc = this.peerConnections[remoteUserId];
-
-          if (amIBroadcaster && this.localStream) {
+          
+          // حفظ Stream محلياً على PC لتتبعه (للمساعدة في removeTrack لاحقاً)
+          pc.localStream = this.localStream; 
+          
+          // إضافة مسار الصوت إذا كنت حالياً على مايك
+          if (this.isMicActive && this.localStream) {
               this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
           }
 
@@ -1664,6 +1800,7 @@
                   remoteAudio.id = 'remote-audio-' + remoteUserId;
                   remoteAudio.autoplay = true;
                   remoteAudio.playsInline = true; 
+                  document.muted = false; // التأكد من أن الصوت ليس مكتوماً افتراضياً
                   document.getElementById('remote-audio-container').appendChild(remoteAudio);
               }
               remoteAudio.srcObject = event.streams[0];
@@ -1681,32 +1818,56 @@
           };
 
           pc.onconnectionstatechange = () => {
+              // إذا فشل الاتصال أو انقطع، قم بتنظيف الاتصال
               if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
                   this.cleanupPeerConnection(remoteUserId);
               }
           };
+          
+          pc.oniceconnectionstatechange = () => {
+              if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') {
+                  this.cleanupPeerConnection(remoteUserId);
+              }
+          };
+          
+          pc.onnegotiationneeded = async () => {
+              if (amIBroadcaster && pc.signalingState !== 'stable') return;
+              if (amIBroadcaster) {
+                 this.createOfferAndSend(remoteUserId);
+              }
+          };
 
           if (isInitiator) {
-              try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                
-                const signalsRef = ref(this.db, `rooms/${this.currentRoomId}/webrtc/${remoteUserId}/signals`);
-                await push(signalsRef, {
-                    type: 'offer',
-                    senderId: this.currentUser.uid,
-                    data: { sdp: offer.sdp, type: offer.type }
-                });
+             this.createOfferAndSend(remoteUserId);
+          }
+      }
+      
+      async createOfferAndSend(remoteUserId) {
+          const pc = this.peerConnections[remoteUserId];
+          if (!pc || pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-remote-offer') return; // تجنب العروض المزدوجة
 
-              } catch (e) {
-                console.error(`Error creating offer for ${remoteUserId}: ${e.message}`);
-              }
+          try {
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              
+              const signalsRef = ref(this.db, `rooms/${this.currentRoomId}/webrtc/${remoteUserId}/signals`);
+              await push(signalsRef, {
+                  type: 'offer',
+                  senderId: this.currentUser.uid,
+                  data: { sdp: offer.sdp, type: offer.type }
+              });
+
+          } catch (e) {
+              console.error(`Error creating offer for ${remoteUserId}: ${e.message}`);
           }
       }
 
       async handleOffer(senderId, offer) {
         try {
-            await this.createPeerConnection(senderId, false);
+            // إنشاء الاتصال إذا لم يكن موجوداً
+            if (!this.peerConnections[senderId]) {
+                 await this.createPeerConnection(senderId, false);
+            }
             const pc = this.peerConnections[senderId];
             if (!pc) return;
             
@@ -1731,7 +1892,7 @@
       async handleAnswer(senderId, answer) {
         try {
             const pc = this.peerConnections[senderId];
-            if (pc && !pc.currentRemoteDescription) {
+            if (pc && pc.signalingState !== 'stable') {
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
             }
             await this.applyBufferedIceCandidates(senderId);
@@ -1759,7 +1920,7 @@
       async applyBufferedIceCandidates(senderId) {
         if (this.iceCandidateBuffer[senderId]) {
             const pc = this.peerConnections[senderId];
-            if (pc) {
+            if (pc && pc.remoteDescription) {
                 for (const candidate of this.iceCandidateBuffer[senderId]) {
                     try {
                         await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -1792,6 +1953,7 @@
               delete this.listeners.webrtc;
           }
           if(this.currentRoomId) {
+            // إزالة عقدة الإشارة الخاصة بي
             const mySignalRef = ref(this.db, `rooms/${this.currentRoomId}/webrtc/${this.currentUser.uid}`);
             remove(mySignalRef);
           }
@@ -1802,7 +1964,7 @@
           audioElements.forEach(audio => {
             audio.muted = false;
             audio.play().catch(e => {
-                console.log("User interaction might still be needed to play audio.");
+                // قد يحتاج التصفح إلى تفاعل المستخدم للعب الصوت
             });
           });
       }
@@ -1878,12 +2040,18 @@
         const recipientSelect = document.getElementById('gift-recipient-select');
         const recipientId = recipientSelect.value;
         
+        const senderData = await this.getUserData(this.currentUser.uid);
+        let giftMessageText = '';
+        
         // إذا كان الهدية موجهة لمستخدم معين
         if (recipientId !== 'all') {
             if (singleRecipientEarning >= 1) {
                 const recipientRef = ref(this.db, `users/${recipientId}`);
                 await update(recipientRef, { diamonds: increment(singleRecipientEarning) });
             }
+            const recipientData = await this.getUserData(recipientId);
+            giftMessageText = `${senderData.name} أرسل ${quantity > 1 ? quantity + 'x ' : ''}${this.selectedGift.name} 🎁 لـ ${recipientData.name}`;
+            
         } else {
             // إذا كانت الهدية للجميع
             if (singleRecipientEarning >= 1) {
@@ -1901,17 +2069,9 @@
                     await Promise.all(recipientPromises);
                 }
             }
+            giftMessageText = `${senderData.name} أرسل ${quantity > 1 ? quantity + 'x ' : ''}${this.selectedGift.name} 🎁 للجميع`;
         }
         
-        const senderData = await this.getUserData(this.currentUser.uid);
-        let giftMessageText = '';
-        
-        if (recipientId === 'all') {
-            giftMessageText = `${senderData.name} أرسل ${quantity}x ${this.selectedGift.name} 🎁 للجميع`;
-        } else {
-            const recipientData = await this.getUserData(recipientId);
-            giftMessageText = `${senderData.name} أرسل ${quantity}x ${this.selectedGift.name} 🎁 لـ ${recipientData.name}`;
-        }
         
         const payload = {
             text: giftMessageText,
@@ -2002,8 +2162,8 @@
               const presenceRef = ref(this.db, `rooms/${this.currentRoomId}/presence`);
               const presenceSnapshot = await get(presenceRef);
               if (presenceSnapshot.exists()) {
-                  presenceSnapshot.forEach(childSnapshot => {
-                      const uid = childSnapshot.key;
+                  const presenceUsers = presenceSnapshot.val();
+                  for(const uid in presenceUsers) {
                       if (uid !== this.currentUser.uid && uid !== userId) {
                           this.getUserData(uid).then(userData => {
                               const option = document.createElement('option');
@@ -2012,7 +2172,7 @@
                               recipientSelect.appendChild(option);
                           });
                       }
-                  });
+                  }
               }
           }
 
@@ -2252,8 +2412,8 @@
               const presenceRef = ref(chatManager.db, `rooms/${chatManager.currentRoomId}/presence`);
               const presenceSnapshot = await get(presenceRef);
               if (presenceSnapshot.exists()) {
-                  presenceSnapshot.forEach(childSnapshot => {
-                      const uid = childSnapshot.key;
+                  const presenceUsers = presenceSnapshot.val();
+                  for(const uid in presenceUsers) {
                       if (uid !== chatManager.currentUser.uid) {
                           chatManager.getUserData(uid).then(userData => {
                               const option = document.createElement('option');
@@ -2262,7 +2422,7 @@
                               recipientSelect.appendChild(option);
                           });
                       }
-                  });
+                  }
               }
           }
 
