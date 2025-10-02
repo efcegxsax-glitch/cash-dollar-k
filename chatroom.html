@@ -1102,7 +1102,9 @@
               requiredPeers.forEach(peerId => {
                   if (!currentPeers.has(peerId)) {
                       const amITheInitiator = myId < peerId;
-                      this.createPeerConnection(peerId, amITheInitiator);
+                      if (amITheInitiator) {
+                          this.createPeerConnection(peerId, true);
+                      }
                   }
               });
 
@@ -2291,4 +2293,4 @@
   </script>
 
 </body>
-  </html>
+</html>
